@@ -1,5 +1,7 @@
 
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -19,3 +21,10 @@ class IncidentReport(BaseModel):
     recommendations: list[str]
     evidence: list[str]
     matched_patterns: list[str]
+
+
+class IncidentHistoryItem(BaseModel):
+    id: UUID
+    created_at: datetime
+    logs: str
+    report: IncidentReport

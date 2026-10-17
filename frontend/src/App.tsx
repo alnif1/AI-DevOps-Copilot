@@ -30,23 +30,12 @@ type IncidentReport = {
 
 type IncidentHistoryItem = {
   id: string;
-  createdAt: string;
+  created_at: string;
   logs: string;
   report: IncidentReport;
 };
 
 type Page = "analyzer" | "services" | "history";
-
-const HISTORY_KEY = "opspilot-incident-history";
-
-function loadHistory(): IncidentHistoryItem[] {
-  try {
-    const saved = localStorage.getItem(HISTORY_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch {
-    return [];
-  }
-}
 
 function App() {
   const [page, setPage] = useState<Page>("analyzer");
@@ -59,17 +48,38 @@ function App() {
   const [report, setReport] = useState<IncidentReport | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const [history, setHistory] =
-    useState<IncidentHistoryItem[]>(loadHistory);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [history, setHistory] = useState<IncidentHistoryItem[]>([]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    } catch (storageError) {
-      console.error("Could not save incident history:", storageError);
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        const response = await fetch("/api/v1/history");
+        if (!response.ok) {
+          throw new Error(`Could not load history (${response.status}).`);
+        }
+        const items: IncidentHistoryItem[] = await response.json();
+        if (!cancelled) setHistory(items);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not load incident history."
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
     }
-  }, [history]);
+
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function analyzeLogs() {
     if (!logs.trim() || !service.trim() || loading) return;
@@ -79,18 +89,15 @@ function App() {
     setReport(null);
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/v1/analyze",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            log_text: logs,
-            service_name: service.trim(),
-            environment,
-          }),
-        }
-      );
+      const response = await fetch("/api/v1/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          log_text: logs,
+          service_name: service.trim(),
+          environment,
+        }),
+      });
 
       if (!response.ok) {
         const details = await response.text();
@@ -103,14 +110,14 @@ function App() {
 
       setReport(result);
 
-      const item: IncidentHistoryItem = {
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-        logs,
-        report: result,
-      };
-
-      setHistory((previous) => [item, ...previous]);
+      const historyResponse = await fetch("/api/v1/history");
+      if (!historyResponse.ok) {
+        throw new Error(
+          `Analysis completed, but history could not be refreshed (${historyResponse.status}).`
+        );
+      }
+      const items: IncidentHistoryItem[] = await historyResponse.json();
+      setHistory(items);
     } catch (err) {
       setError(
         err instanceof Error
@@ -131,13 +138,39 @@ function App() {
     setPage("analyzer");
   }
 
-  function deleteIncident(id: string) {
-    setHistory((previous) => previous.filter((item) => item.id !== id));
+  async function deleteIncident(id: string) {
+    setError("");
+    try {
+      const response = await fetch(`/api/v1/history/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(`Could not delete incident (${response.status}).`);
+      }
+      setHistory((previous) => previous.filter((item) => item.id !== id));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not delete incident."
+      );
+    }
   }
 
-  function clearHistory() {
+  async function clearHistory() {
     if (window.confirm("Delete all saved incident history?")) {
-      setHistory([]);
+      setError("");
+      try {
+        const response = await fetch("/api/v1/history", {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error(`Could not clear history (${response.status}).`);
+        }
+        setHistory([]);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Could not clear history."
+        );
+      }
     }
   }
 
@@ -148,7 +181,7 @@ function App() {
         {
           name: item.report.service_name,
           environment: item.report.environment,
-          lastSeen: item.createdAt,
+          lastSeen: item.created_at,
           count: history.filter(
             (other) =>
               other.report.service_name === item.report.service_name &&
@@ -320,7 +353,7 @@ function App() {
 
                   <p className="privacy-note">
                     <ShieldAlert size={15} />
-                    Logs are sent to your local API.
+                    Logs are sent to your local API and saved in PostgreSQL.
                   </p>
                 </section>
 
@@ -504,7 +537,13 @@ function App() {
               </div>
 
               <section className="panel data-panel">
-                {history.length === 0 ? (
+                {error && <div className="error-message">{error}</div>}
+                {loadingHistory ? (
+                  <div className="empty-state">
+                    <Loader2 className="spin" />
+                    <p>Loading incident history...</p>
+                  </div>
+                ) : history.length === 0 ? (
                   <div className="empty-state">
                     <Clock size={32} />
                     <h3>No incidents saved</h3>
@@ -532,7 +571,7 @@ function App() {
                           <div className="history-meta">
                             <span>
                               <Clock size={14} />
-                              {new Date(item.createdAt).toLocaleString()}
+                              {new Date(item.created_at).toLocaleString()}
                             </span>
                             <span>{item.report.environment}</span>
                             <span>
