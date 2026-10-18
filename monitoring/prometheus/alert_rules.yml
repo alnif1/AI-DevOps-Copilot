@@ -1,0 +1,11 @@
+groups:
+  - name: endpoint-availability
+    rules:
+      - alert: EndpointUnavailable
+        expr: probe_success == 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Endpoint unavailable: {{ $labels.service }}"
+          description: "The health probe for {{ $labels.instance }} has been failing for at least 30 seconds."

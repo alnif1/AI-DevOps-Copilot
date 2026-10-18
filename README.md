@@ -23,5 +23,23 @@ POSTGRES_USER=opspilot
 POSTGRES_PASSWORD=replace-with-a-local-password
 ```
 
-The frontend is published on port `8080` and the API on port `8000` by default.
-Set `FRONTEND_PORT` or `BACKEND_PORT` to change those host ports.
+The frontend is published on port `8080`, the API on port `8000`, and Prometheus
+on port `9090` by default. Set `FRONTEND_PORT`, `BACKEND_PORT`, or
+`PROMETHEUS_PORT` to change those host ports.
+
+## Monitoring
+
+Prometheus and Blackbox Exporter are included in the Compose stack. Prometheus
+probes the OpsPilot API health endpoint and the example external URL configured
+in `monitoring/prometheus/prometheus.yml`. Replace `https://example.com/` with
+one or more HTTP/HTTPS endpoints you own or are authorized to monitor.
+
+Open <http://localhost:9090/targets> to check target status. Query
+`probe_success` in the Prometheus expression browser: `1` means reachable and
+`0` means the probe failed. The `EndpointUnavailable` alert fires after a
+target has failed continuously for 30 seconds. Alertmanager/webhook delivery is
+not configured yet.
+
+Blackbox Exporter's host port `9115` is bound to localhost. Prometheus data is
+stored in the `prometheus_data` named volume and remains when running
+`docker compose down`.
