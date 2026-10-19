@@ -33,6 +33,10 @@ type IncidentHistoryItem = {
   created_at: string;
   logs: string;
   report: IncidentReport;
+  alert_fingerprint: string | null;
+  alert_status: "firing" | "resolved" | null;
+  alert_started_at: string | null;
+  alert_ended_at: string | null;
 };
 
 type Page = "analyzer" | "services" | "history";
@@ -577,6 +581,11 @@ function App() {
                             <span>
                               {item.report.matched_patterns.length} pattern(s)
                             </span>
+                            {item.alert_status && (
+                              <span>
+                                Alert {item.alert_status.toUpperCase()}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="history-actions">

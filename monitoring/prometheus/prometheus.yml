@@ -5,6 +5,11 @@ global:
 rule_files:
   - /etc/prometheus/alert_rules.yml
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: prometheus
     static_configs:
@@ -26,6 +31,11 @@ scrape_configs:
         labels:
           service: external-example
           scope: external
+      - targets:
+          - http://outage-test/
+        labels:
+          service: phase4-outage-test
+          scope: test
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

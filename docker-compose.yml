@@ -50,6 +50,10 @@ services:
     ports:
       - "127.0.0.1:9115:9115"
 
+  outage-test:
+    image: nginx:alpine
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
@@ -60,11 +64,28 @@ services:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
+    depends_on:
+      - alertmanager
+      - blackbox-exporter
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
     depends_on:
-      - blackbox-exporter
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9093:9093"
 
 volumes:
   postgres_data:
   prometheus_data:
+  alertmanager_data:

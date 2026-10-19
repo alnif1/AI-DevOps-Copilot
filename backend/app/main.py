@@ -13,8 +13,15 @@ from app.database import (
     get_connection,
     initialize_database,
     list_incidents,
+    process_alert,
 )
-from app.schemas import AnalyzeRequest, IncidentHistoryItem, IncidentReport
+from app.schemas import (
+    AlertmanagerWebhook,
+    AlertmanagerWebhookResponse,
+    AnalyzeRequest,
+    IncidentHistoryItem,
+    IncidentReport,
+)
 
 
 @asynccontextmanager
@@ -61,6 +68,79 @@ def analyze_incident(request: AnalyzeRequest) -> IncidentReport:
         report=report.model_dump(mode="json"),
     )
     return report
+
+
+@app.post(
+    "/api/v1/alerts",
+    response_model=AlertmanagerWebhookResponse,
+)
+def receive_alerts(
+    webhook: AlertmanagerWebhook,
+) -> AlertmanagerWebhookResponse:
+    results = []
+    for alert in webhook.alerts:
+        alert_name = alert.labels.get("alertname", "PrometheusAlert")
+        severity = alert.labels.get("severity", "warning").lower()
+        severity_map = {
+            "critical": "critical",
+            "error": "high",
+            "warning": "medium",
+            "info": "low",
+        }
+        service_name = (
+            alert.labels.get("service")
+            or alert.labels.get("job")
+            or alert_name
+        )
+        environment = (
+            alert.labels.get("environment")
+            or alert.labels.get("scope")
+            or "monitoring"
+        )
+        summary = alert.annotations.get(
+            "summary",
+            f"{alert_name} is {alert.status}.",
+        )
+        description = alert.annotations.get("description")
+        log_lines = [
+            f"Alert: {alert_name}",
+            f"Status: {alert.status}",
+            f"Fingerprint: {alert.fingerprint}",
+            f"Target: {alert.labels.get('instance', 'unknown')}",
+            f"Started at: {alert.starts_at.isoformat()}",
+        ]
+        if description:
+            log_lines.append(f"Description: {description}")
+        if alert.generator_url:
+            log_lines.append(f"Generator: {alert.generator_url}")
+
+        report = IncidentReport(
+            service_name=service_name,
+            environment=environment,
+            severity=severity_map.get(severity, "medium"),
+            summary=summary,
+            likely_causes=[
+                description or f"Prometheus reported {alert_name}."
+            ],
+            recommendations=[
+                "Inspect the monitored service and its recent logs.",
+                "Confirm the service has recovered before resolving the incident.",
+            ],
+            evidence=log_lines,
+            matched_patterns=[alert_name],
+        )
+        results.append(
+            process_alert(
+                fingerprint=alert.fingerprint,
+                status=alert.status,
+                starts_at=alert.starts_at,
+                ends_at=alert.ends_at,
+                logs="\n".join(log_lines),
+                report=report.model_dump(mode="json"),
+            )
+        )
+
+    return AlertmanagerWebhookResponse(alerts=results)
 
 
 @app.get("/api/v1/history", response_model=list[IncidentHistoryItem])

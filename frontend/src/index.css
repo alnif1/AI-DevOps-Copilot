@@ -2,9 +2,10 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family: "DM Sans", sans-serif;
-  background: #090d16;
+  color: #1e293b;
+  background: #f4f7fb;
 }
 
 * {
